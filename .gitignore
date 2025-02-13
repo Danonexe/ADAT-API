@@ -43,4 +43,3 @@ out/
 ### claves y variables de entorno
 *.pem
 *.env.properties
-

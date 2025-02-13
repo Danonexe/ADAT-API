@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "com.es"
-version = "1"
+version = "0.0.1-SNAPSHOT"
 
 java {
 	toolchain {

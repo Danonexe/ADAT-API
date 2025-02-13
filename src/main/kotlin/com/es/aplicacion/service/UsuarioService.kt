@@ -21,7 +21,7 @@ class UsuarioService : UserDetailsService {
     @Autowired
     private lateinit var passwordEncoder: PasswordEncoder
     @Autowired
-    private lateinit var externalApiService: ExternalApiService
+    private lateinit var externalApiService: ExternalAPIService
 
 
     override fun loadUserByUsername(username: String?): UserDetails {
@@ -69,38 +69,28 @@ class UsuarioService : UserDetailsService {
 
 
         // Comprobar la provincia
-        val datosProvincias = externalApiService.obtenerProvinciasDesdeApi()
+        val datosProvincias = externalApiService.obtenerDatosDesdeApi()
         var cpro: String = ""
         if(datosProvincias != null) {
             if(datosProvincias.data != null) {
                 val provinciaEncontrada = datosProvincias.data.stream().filter {
-                    it.PRO == usuarioInsertadoDTO.direccion.provincia.uppercase()
+                    it.PRO == usuarioInsertadoDTO.direccion?.provincia?.uppercase()
                 }.findFirst().orElseThrow {
-                    BadRequestException("Provincia ${usuarioInsertadoDTO.direccion.provincia} no encontrada")
+                    BadRequestException("Provincia ${usuarioInsertadoDTO.direccion?.provincia} no encontrada")
                 }
                 cpro = provinciaEncontrada.CPRO
             }
         }
 
-        // Comprobar el municipio
-        val datosMunicipios = externalApiService.obtenerMunicipiosDesdeApi(cpro)
-        if(datosMunicipios != null) {
-            if(datosMunicipios.data != null) {
-                datosMunicipios.data.stream().filter {
-                    it.DMUN50 == usuarioInsertadoDTO.direccion.municipio.uppercase()
-                }.findFirst().orElseThrow {
-                    BadRequestException("Municipio ${usuarioInsertadoDTO.direccion.municipio} incorrecto")
-                }
-            }
-        }
+
 
         // Insertar el user (convierto a Entity)
         val usuario = Usuario(
-             null,
+            null,
             usuarioInsertadoDTO.username,
             passwordEncoder.encode(usuarioInsertadoDTO.password),
             usuarioInsertadoDTO.email,
-            usuarioInsertadoDTO.rol,
+            usuarioInsertadoDTO.rol.toString(),
             usuarioInsertadoDTO.direccion
         )
 
@@ -114,5 +104,4 @@ class UsuarioService : UserDetailsService {
             usuario.roles
         )
 
-    }
-}
+    }}

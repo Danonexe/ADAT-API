@@ -1,4 +1,4 @@
-package com.es.mongocomp.domain
+package com.es.aplicacion.domain
 
 data class DatosProvincias(
     val update_date: String,
