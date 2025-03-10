@@ -1,4 +1,4 @@
-package com.es.aplicacion.service
+﻿package com.es.aplicacion.service
 
 import com.es.aplicacion.dto.UsuarioDTO
 import com.es.aplicacion.dto.UsuarioRegisterDTO
@@ -7,6 +7,7 @@ import com.es.aplicacion.error.exception.UnauthorizedException
 import com.es.aplicacion.model.Usuario
 import com.es.aplicacion.repository.UsuarioRepository
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.data.crossstore.ChangeSetPersister
 import org.springframework.security.core.userdetails.User
 import org.springframework.security.core.userdetails.UserDetails
 import org.springframework.security.core.userdetails.UserDetailsService
@@ -52,7 +53,7 @@ class UsuarioService : UserDetailsService {
 
         // Fran ha comprobado que el usuario existe previamente
         if(usuarioRepository.findByUsername(usuarioInsertadoDTO.username).isPresent) {
-            throw Exception("Usuario ${usuarioInsertadoDTO.username} ya está registrado")
+            throw BadRequestException("Usuario ${usuarioInsertadoDTO.username} ya está registrado")
         }
 
         // comprobar que ambas passwords sean iguales
@@ -61,8 +62,8 @@ class UsuarioService : UserDetailsService {
         }
 
         // Comprobar el ROL
-        if(usuarioInsertadoDTO.rol != null && usuarioInsertadoDTO.rol != "USER" && usuarioInsertadoDTO.rol != "ADMIN" ) {
-            throw BadRequestException("ROL: ${usuarioInsertadoDTO.rol} incorrecto")
+        if(usuarioInsertadoDTO.roles != null && usuarioInsertadoDTO.roles != "USER" && usuarioInsertadoDTO.roles != "ADMIN" ) {
+            throw BadRequestException("ROL: ${usuarioInsertadoDTO.roles} incorrecto")
         }
 
         // Comprobar el EMAIL
@@ -90,7 +91,7 @@ class UsuarioService : UserDetailsService {
             usuarioInsertadoDTO.username,
             passwordEncoder.encode(usuarioInsertadoDTO.password),
             usuarioInsertadoDTO.email,
-            usuarioInsertadoDTO.rol.toString(),
+            usuarioInsertadoDTO.roles.toString(),
             usuarioInsertadoDTO.direccion
         )
 
@@ -104,4 +105,9 @@ class UsuarioService : UserDetailsService {
             usuario.roles
         )
 
-    }}
+    }
+    //Encontrar Usuario
+    fun buscarUsuario(username: String) {
+        usuarioRepository.findByUsername(username).orElseThrow{ ChangeSetPersister.NotFoundException() }
+    }
+}

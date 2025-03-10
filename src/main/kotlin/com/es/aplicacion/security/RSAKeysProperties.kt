@@ -9,5 +9,3 @@ data class RSAKeysProperties(
     var publicKey : RSAPublicKey,
     var privateKey: RSAPrivateKey
 )
-
-
