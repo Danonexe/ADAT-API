@@ -1,127 +1,105 @@
-﻿package com.es.aplicacion.service
+package com.es.aplicacion.service
 
 import com.es.aplicacion.dto.TareaDTO
-import com.es.aplicacion.dto.TareaInsertarDTO
 import com.es.aplicacion.error.exception.BadRequestException
+import com.es.aplicacion.error.exception.UnauthorizedException
 import com.es.aplicacion.model.Tarea
 import com.es.aplicacion.repository.TareaRepository
+import com.es.aplicacion.repository.UsuarioRepository
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.data.crossstore.ChangeSetPersister
-import org.springframework.security.core.GrantedAuthority
 import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.stereotype.Service
-import java.time.Instant
-import java.util.*
+import java.util.Date
 
 @Service
 class TareaService {
 
     @Autowired
     private lateinit var tareaRepository: TareaRepository
+
     @Autowired
-    private lateinit var usuarioService: UsuarioService
+    private lateinit var usuarioRepository: UsuarioRepository
 
-    fun getTareas(): List<Tarea> {
-        val auth = SecurityContextHolder.getContext().authentication
-        val usuario = auth.name
-        val roles = auth.authorities.map(GrantedAuthority::getAuthority)
+    fun obtenerTareas(): List<TareaDTO> {
+        val authentication = SecurityContextHolder.getContext().authentication
+        val username = authentication.name
+        val roles = authentication.authorities.map { it.authority }
 
-        return when {
-            "ROLE_ADMIN" in roles -> {
-                // Si es administrador, devuelve todas las tareas
-                tareaRepository.findAll()
-            }
-            "ROLE_USER" in roles -> {
-                // Si es usuario normal, devuelve solo sus tareas
-                tareaRepository.findByAutor(usuario).orElse(emptyList())
-            }
-            else -> {
-                // Si no tiene ninguno de estos roles, devuelve lista vacía
-                emptyList()
-            }
-        }
-    }
-
-    fun getTareaById(id: String): Tarea? {
-        return tareaRepository.findById(id).orElseThrow { ChangeSetPersister.NotFoundException() }
-    }
-
-    fun crearTarea(tarea: TareaInsertarDTO): TareaDTO {
-        val auth = SecurityContextHolder.getContext().authentication
-        val usuario = auth.name
-        val rol = auth.authorities.map(GrantedAuthority::getAuthority)
-
-        if (tarea.objetivo.isBlank()) {
-            throw BadRequestException("El titulo no puede estar en blanco")
-        }
-
-        // Verificar permiso para crear tarea
-        if ("ROLE_USER" in rol) {
-            if (tarea.autor != usuario) {
-                throw BadRequestException("El autor debe ser el usuario actual")
-            }
+        val tareas = if (roles.contains("ROLE_ADMIN")) {
+            // Administrador puede ver todas las tareas
+            tareaRepository.findAll()
         } else {
-            usuarioService.buscarUsuario(tarea.autor)
+            // Usuario normal solo puede ver sus tareas
+            tareaRepository.findByAutor(username)
         }
 
-        val tareaEntity = Tarea(
-            _id = null,
-            autor = tarea.autor,
-            objetivo = tarea.objetivo,
-            fecha = Date.from(Instant.now()),
-            false
+        return tareas.map { tarea ->
+            TareaDTO(
+                id = tarea._id,
+                autor = tarea.autor,
+                objetivo = tarea.objetivo,
+                fecha = tarea.fecha,
+                completada = tarea.completada
+            )
+        }
+    }
+
+    fun crearTarea(tareaDTO: TareaDTO): TareaDTO {
+        val authentication = SecurityContextHolder.getContext().authentication
+        val username = authentication.name
+        val roles = authentication.authorities.map { it.authority }
+
+        // Validación de campos
+        if (tareaDTO.objetivo.isNullOrBlank()) {
+            throw BadRequestException("El objetivo de la tarea no puede estar vacío")
+        }
+
+        // Si el autor es diferente al usuario autenticado, verificar que sea admin
+        if (tareaDTO.autor != username && !roles.contains("ROLE_ADMIN")) {
+            throw UnauthorizedException("No tienes permisos para crear tareas para otros usuarios")
+        }
+
+        // Verificar que el usuario para el que se crea la tarea existe
+        val autorFinal = tareaDTO.autor ?: username
+        usuarioRepository.findByUsername(autorFinal).orElseThrow {
+            BadRequestException("El usuario $autorFinal no existe")
+        }
+
+        // Crear la tarea
+        val tarea = Tarea(
+            _id = null, // MongoDB generará el ID
+            autor = autorFinal,
+            objetivo = tareaDTO.objetivo,
+            fecha = tareaDTO.fecha ?: Date(),
+            completada = false // Por defecto, una tarea nueva no está completada
         )
 
-        val savedTarea = tareaRepository.save(tareaEntity)
+        val tareaGuardada = tareaRepository.save(tarea)
 
         return TareaDTO(
-            id = savedTarea._id,
-            objetivo = savedTarea.objetivo.toString(),
-            autor = savedTarea.autor.toString(),
-            fecha = savedTarea.fecha,
-            completada = savedTarea.completada
+            id = tareaGuardada._id,
+            autor = tareaGuardada.autor,
+            objetivo = tareaGuardada.objetivo,
+            fecha = tareaGuardada.fecha,
+            completada = tareaGuardada.completada
         )
     }
 
 
-    fun deleteTarea(id: String) {
-        val tarea = getTareaById(id) ?: throw ChangeSetPersister.NotFoundException()
-        val auth = SecurityContextHolder.getContext().authentication
-        val usuario = auth.name
-        val rol = auth.authorities.map(GrantedAuthority::getAuthority)
+    fun marcarTareaComoCompletada(id: String): TareaDTO {
+        val authentication = SecurityContextHolder.getContext().authentication
+        val username = authentication.name
+        val roles = authentication.authorities.map { it.authority }
 
-        when {
-            "ROLE_ADMIN" in rol -> {
-                tareaRepository.deleteById(id)
-            }
-            "ROLE_USER" in rol && tarea.autor == usuario -> {
-                tareaRepository.deleteById(id)
-            }
-            else -> throw BadRequestException("No tiene permiso para borrar esa tarea")
-        }
-    }
-
-    fun completarTarea(id: String): TareaDTO {
-        val tarea = getTareaById(id) ?: throw ChangeSetPersister.NotFoundException()
-        val auth = SecurityContextHolder.getContext().authentication
-        val usuario = auth.name
-        val rol = auth.authorities.map(GrantedAuthority::getAuthority)
-
-        // Verificar permisos: solo el propietario o admin pueden completar la tarea
-        when {
-            "ROLE_ADMIN" in rol -> {
-            }
-            "ROLE_USER" in rol && tarea.autor == usuario -> {
-            }
-            else -> throw BadRequestException("No tiene permiso para completar esta tarea")
+        val tarea = tareaRepository.findById(id).orElseThrow {
+            BadRequestException("Tarea no encontrada")
         }
 
-        // Solo actualizar si no está ya completada
-        if (tarea.completada) {
-            throw BadRequestException("tarea ya completada")
+        // Si es el propietario de la tarea o es admin
+        if (tarea.autor != username && !roles.contains("ROLE_ADMIN")) {
+            throw UnauthorizedException("No tienes permisos para modificar esta tarea")
         }
 
-        // Crear una copia de la tarea con el estado completado
         val tareaCompletada = Tarea(
             _id = tarea._id,
             autor = tarea.autor,
@@ -130,50 +108,62 @@ class TareaService {
             completada = true
         )
 
-        tareaRepository.save(tareaCompletada)
-        val TareaDTO = TareaDTO(tarea._id, tarea.autor.toString(), tarea.objetivo.toString(),tarea.fecha,tarea.completada)
-        return TareaDTO
+        val tareaActualizada = tareaRepository.save(tareaCompletada)
+
+        return TareaDTO(
+            id = tareaActualizada._id,
+            autor = tareaActualizada.autor,
+            objetivo = tareaActualizada.objetivo,
+            fecha = tareaActualizada.fecha,
+            completada = tareaActualizada.completada
+        )
     }
 
-    fun descompletarTarea(id: String): TareaDTO {
-        val tarea = getTareaById(id) ?: throw ChangeSetPersister.NotFoundException()
-        val auth = SecurityContextHolder.getContext().authentication
-        val usuario = auth.name
-        val rol = auth.authorities.map(GrantedAuthority::getAuthority)
+    fun desmarcarTareaComoCompletada(id: String): TareaDTO {
+        val authentication = SecurityContextHolder.getContext().authentication
+        val username = authentication.name
+        val roles = authentication.authorities.map { it.authority }
 
-        // Verificar permisos: solo el propietario o admin pueden descompletar la tarea
-        when {
-            "ROLE_ADMIN" in rol -> {
-                // Los administradores pueden descompletar cualquier tarea
-            }
-            "ROLE_USER" in rol && tarea.autor == usuario -> {
-                // El propietario puede descompletar su propia tarea
-            }
-            else -> throw BadRequestException("No tiene permiso para descompletar esta tarea")
+        val tarea = tareaRepository.findById(id).orElseThrow {
+            BadRequestException("Tarea no encontrada")
         }
 
-        // Solo actualizar si ya está completada
-        if (!tarea.completada) {
-            throw BadRequestException("La tarea ya está marcada como pendiente")
-        }
 
-        // Crear una copia de la tarea con el estado no completado
-        val tareaPendiente = Tarea(
+
+        val tareaNoCompletada = Tarea(
             _id = tarea._id,
             autor = tarea.autor,
             objetivo = tarea.objetivo,
             fecha = tarea.fecha,
             completada = false
         )
-        val tareaActualizada = tareaRepository.save(tareaPendiente)
+
+        val tareaActualizada = tareaRepository.save(tareaNoCompletada)
 
         return TareaDTO(
             id = tareaActualizada._id,
-            autor = tareaActualizada.autor.toString(),
-            objetivo = tareaActualizada.objetivo.toString(),
+            autor = tareaActualizada.autor,
+            objetivo = tareaActualizada.objetivo,
             fecha = tareaActualizada.fecha,
             completada = tareaActualizada.completada
         )
     }
 
+
+    fun eliminarTarea(id: String) {
+        val authentication = SecurityContextHolder.getContext().authentication
+        val username = authentication.name
+        val roles = authentication.authorities.map { it.authority }
+
+        val tarea = tareaRepository.findById(id).orElseThrow {
+            BadRequestException("Tarea no encontrada")
+        }
+
+        // Verificar permisos
+        if (tarea.autor != username && !roles.contains("ROLE_ADMIN")) {
+            throw UnauthorizedException("No tienes permisos para eliminar esta tarea")
+        }
+
+        tareaRepository.deleteById(id)
+    }
 }
